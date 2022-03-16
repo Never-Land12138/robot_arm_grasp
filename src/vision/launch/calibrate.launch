@@ -1,0 +1,4 @@
+<launch>
+        <include file="$(find realsense-ros)/realsense2_camera/launch/rs_camera.launch)"/>
+        <node pkg="vision" type="vision.py" name = "vision" ns="vision", output="screen"/>
+</launch>
