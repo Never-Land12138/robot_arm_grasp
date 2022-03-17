@@ -122,8 +122,11 @@ void fromR2rpy(const cv::Mat& R, double& roll, double& pitch, double& yaw)
 bool ICP(const std::vector<cv::Point3d>& src_points, const std::vector<cv::Point3d>& dst_points, cv::Mat& T, cv::Mat& R, cv::Mat& t)
 {
         T = cv::Mat::eye(cv::Size(4,4), CV_64FC1);
-        if(src_points.size() != dst_points.size() || src_points.size() < 3) return false;
-
+        if(src_points.size() != dst_points.size() || src_points.size() < 3)
+        {
+                ROS_INFO("ICP Wrong!");
+                return false;
+        }
         int points_num = src_points.size();
 
         cv::Point3d src_center = cv::Point3d(0,0,0);
@@ -234,12 +237,14 @@ int main(int argc, char** argv)
                 {
                         if(start_detect)
                         {
+                                ROS_INFO("Start Detect Chessboard!");
                                 start_detect = false;
                                 std::vector<cv::Point2f>corners;
 
                                 if(!rgb.empty())
                                 {
                                         cv::imshow("chessboard", rgb);
+                                        cv::waitKey(10);
                                 }
 
                                 getCornerList(rgb, corners);
@@ -253,10 +258,9 @@ int main(int argc, char** argv)
                                         
                                         last_center = center;
                                 }
-
+                                ROS_INFO("Chessboard Detected! Center Coordinate: [%s, %s, %s]", center.x, center.y, center.z);
                                 camera_points_list.push_back((cv::Point3d)center);
                                 
-                                ROS_INFO("Chessboard Detected!");
                                 std_msgs::Bool msg;
                                 msg.data = true;
                                 chessboard_detected_pub.publish(msg);

@@ -59,13 +59,12 @@ int main(int argc, char** argv)
                         rate.sleep();
                 }
                 target_achieved = false;
-                ROS_INFO("TARGET ACHIEVED!");
+                ROS_INFO("Target Achieved! Coordinate: [ %s, %s, %s]", target_pose_list[i].position.x, target_pose_list[i].position.y, target_pose_list[i].position.z);
 
                 std_msgs::Bool msg;
                 msg.data = true;
 
                 start_detect_chessboard.publish(msg);
-                ROS_INFO("MSG PUBLISHED!");
                 ros::spinOnce();
 
                 while(ros::ok()&&(!chessboard_detected))
