@@ -26,6 +26,24 @@ void PoseCallBack(const geometry_msgs::Pose::ConstPtr& msg)
         }
 }
 
+void GoHomeCallBack(const std_msgs::Bool::ConstPtr& msg)
+{
+        if((*msg).data)
+        {
+                static const std::string PLANNING_GROUP = "gluon";
+                moveit::planning_interface::MoveGroupInterface move_group(PLANNING_GROUP);
+
+                std::vector<double> joint_home_position(6,0);
+                move_group.setJointValueTarget(joint_home_position);
+
+                moveit::planning_interface::MoveGroupInterface::Plan go_home;
+                bool success = (move_group.plan(go_home)==moveit::planning_interface::MoveItErrorCode::SUCCESS);
+
+                ROS_INFO("Go to home");
+                move_group.execute(go_home);
+        }
+}
+
 int main(int argc, char** argv)
 {
         ros::init(argc, argv, "robot_arm_server");
@@ -36,6 +54,7 @@ int main(int argc, char** argv)
         ros::Publisher target_achieved_pub = nh.advertise<std_msgs::Bool>("/robot/pose_achieved", 10);
 
         ros::Subscriber pose_sub = nh.subscribe("/robot/pose", 10, PoseCallBack);
+        ros::Subscriber go_home_sub = nh.subscribe("/robot/go_home", 10, GoHomeCallBack);
 
         static const std::string PLANNING_GROUP = "gluon";
         moveit::planning_interface::MoveGroupInterface move_group(PLANNING_GROUP);
