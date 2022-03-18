@@ -6,9 +6,9 @@
 bool target_achieved = false;
 bool chessboard_detected = false;
 
-void targetAchieveCallBack(const std_msgs::Bool& msg)
+void targetAchieveCallBack(const std_msgs::Bool::ConstPtr& msg)
 {
-        if((msg).data)
+        if((*msg).data)
         {
                 target_achieved = true;
         }
@@ -63,8 +63,8 @@ int main(int argc, char** argv)
 
                 std_msgs::Bool msg;
                 msg.data = true;
-
                 start_detect_chessboard.publish(msg);
+
                 ros::spinOnce();
 
                 while(ros::ok()&&(!chessboard_detected))

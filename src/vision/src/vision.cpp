@@ -38,17 +38,24 @@ void startDetectCallBack(const std_msgs::Bool::ConstPtr& msg)
         }
 }
 
-void getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners)
+bool getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners)
 {
-        if(rgb.empty())return;
-
+        if(rgb.empty())
+        {
+                ROS_WARN("No Image Received!");
+                return false;
+        }
         cv::Mat gray;
         cv::cvtColor(rgb, gray, cv::COLOR_BGR2GRAY);
 
         cv::Size patternSize = board_size;
 
         bool chessboardFound = cv::findChessboardCorners(gray, patternSize, corners);
-        if(!chessboardFound) return;
+        if(!chessboardFound) 
+        {
+                ROS_WARN("No Chessboard Found!");        
+                return false;
+        }
 
         //std::cout<<depth.at<uint16_t>(corners[0].x, corners[0].y)<<std::endl;
         cv::TermCriteria criteria = cv::TermCriteria(cv::TermCriteria::MAX_ITER + cv::TermCriteria::EPS, 40, 0.01);
@@ -58,7 +65,7 @@ void getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners)
         
         cv::imshow("chessboard", rgb);
         
-        return;
+        return true;
 }
 
 void getRT(const std::vector<cv::Point2f>& corners, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, 
@@ -124,7 +131,7 @@ bool ICP(const std::vector<cv::Point3d>& src_points, const std::vector<cv::Point
         T = cv::Mat::eye(cv::Size(4,4), CV_64FC1);
         if(src_points.size() != dst_points.size() || src_points.size() < 3)
         {
-                ROS_INFO("ICP Wrong!");
+                ROS_WARN("ICP Wrong!");
                 return false;
         }
         int points_num = src_points.size();
@@ -247,14 +254,18 @@ int main(int argc, char** argv)
                                         cv::waitKey(10);
                                 }
 
-                                getCornerList(rgb, corners);
+                                while(ros::ok())
+                                {
+                                        bool  getCornerListSuccess = getCornerList(rgb, corners);
+                                        if(getCornerListSuccess)break;
+                                }
 
                                 cv::Point3f center(0.,0.,0.), last_center(0., 0., 0.);
                                 while(ros::ok())
                                 {
                                         getCenter(corners, cameraMatrix, center);
 
-                                        if(abs(center.z - last_center.z)<10 && center.z < 10000 )break;
+                                        if(abs(center.z - last_center.z)<10 && center.z > 100 && center.z < 10000 )break;
                                         
                                         last_center = center;
                                 }
