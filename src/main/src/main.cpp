@@ -33,7 +33,7 @@ int main(int argc, char** argv)
         ros::Subscriber target_achieve_sub = nh.subscribe("/robot/pose_achieved", 10, targetAchieveCallBack);
         ros::Subscriber chessboard_detect_sub = nh.subscribe("/vision/chessboard/had_detected", 10, chessboardDetectedCallBack);
 
-        ros::Rate rate(50);
+        ros::Rate rate(20);
 
         std::vector<geometry_msgs::Pose> target_pose_list;
         for(int i = 0; i<9; i ++)
@@ -42,7 +42,7 @@ int main(int argc, char** argv)
 
                 target_pose.position.x = -0.1 + 0.1*(i/3);
                 target_pose.position.y = 0.3 - 0.1*(i%3);
-                target_pose.position.z = 0.3;
+                target_pose.position.z = 0.35;
 
                 target_pose.orientation.w = 1.;
 
@@ -51,15 +51,19 @@ int main(int argc, char** argv)
 
         for(int i = 0; i < target_pose_list.size(); i++)
         {
+                bool msg_send = false;
                 while(ros::ok()&&(!target_achieved))
                 {
-                        target_pose_pub.publish(target_pose_list[i]);
-                        
+                        if(!msg_send)
+                        {
+                                target_pose_pub.publish(target_pose_list[i]);
+                                msg_send = false;
+                        }
                         ros::spinOnce();
                         rate.sleep();
                 }
                 target_achieved = false;
-                ROS_INFO("Target Achieved! Coordinate: [ %s, %s, %s]", target_pose_list[i].position.x, target_pose_list[i].position.y, target_pose_list[i].position.z);
+                //ROS_INFO("Target Achieved! Coordinate: [ %s, %s, %s]", target_pose_list[i].position.x, target_pose_list[i].position.y, target_pose_list[i].position.z);
 
                 std_msgs::Bool msg;
                 msg.data = true;

@@ -5,9 +5,11 @@
 #include <sensor_msgs/Image.h>
 #include <std_msgs/Bool.h>
 #include <cv_bridge/cv_bridge.h>
-#include <math.h>
+#include <librealsense2/rs.hpp>
 
 #define m2mm (1000)
+#define rad2ang (180./M_PI)
+#define _CALIBRATE_POINT_NUM  (9)
 
 cv::Mat rgb;
 cv::Mat depth;
@@ -38,13 +40,17 @@ void startDetectCallBack(const std_msgs::Bool::ConstPtr& msg)
         }
 }
 
-bool getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners)
+void getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners, bool& chessboard_detected)
 {
         if(rgb.empty())
         {
                 ROS_WARN("No Image Received!");
-                return false;
+                chessboard_detected = false;
+                return;
         }
+
+        cv::imshow("chessboard", rgb);
+
         cv::Mat gray;
         cv::cvtColor(rgb, gray, cv::COLOR_BGR2GRAY);
 
@@ -54,18 +60,19 @@ bool getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners)
         if(!chessboardFound) 
         {
                 ROS_WARN("No Chessboard Found!");        
-                return false;
+                chessboard_detected = false;
+                return;
         }
 
-        //std::cout<<depth.at<uint16_t>(corners[0].x, corners[0].y)<<std::endl;
         cv::TermCriteria criteria = cv::TermCriteria(cv::TermCriteria::MAX_ITER + cv::TermCriteria::EPS, 40, 0.01);
         cv::cornerSubPix(gray, corners, cv::Size(5,5), cv::Size(-1, -1), criteria);
 
-        cv::drawChessboardCorners(rgb, patternSize, corners, chessboardFound);
+        cv::drawChessboardCorners(gray, patternSize, corners, chessboardFound);
         
-        cv::imshow("chessboard", rgb);
+        cv::imshow("chessboard", gray);
         
-        return true;
+        chessboard_detected = true;
+        return;
 }
 
 void getRT(const std::vector<cv::Point2f>& corners, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, 
@@ -99,6 +106,7 @@ void getCenter(const std::vector<cv::Point2f>& corners, const cv::Mat& cameraMat
         cv::Point2f center_pixel = corners.at(corners.size()/2);
         
         center.z =  (float)depth.at<uint16_t>(center_pixel.x, center_pixel.y);
+        // center.z =  (float)depth.at<uint16_t>(320, 240);
         center.x = (center_pixel.x - cameraMatrix.at<double>(0,2))*(center.z/cameraMatrix.at<double>(0,0));  
         center.y = (center_pixel.y - cameraMatrix.at<double>(1,2))*(center.z/cameraMatrix.at<double>(1,1));
 }
@@ -177,7 +185,7 @@ bool ICP(const std::vector<cv::Point3d>& src_points, const std::vector<cv::Point
         cv::Mat u, w, vt;
         cv::SVDecomp(S, w, u, vt);
 
-        R = vt.t()*u.t();        
+        R = vt.t()*u.t();     
         t = _dst_center - R*_src_center;
 
         for(int i = 0; i < 3; i++)
@@ -208,22 +216,26 @@ int main(int argc, char** argv)
 
         ros::Rate rate(50);
 
-        //ICP test
         // while(ros::ok())
         // {
-        //         cv::Point3d srcPoint1(0,0,0), srcPoint2(1,1,1), srcPoint3(2,1,2);
-        //         cv::Point3d dstPoint1(0,0,0), dstPoint2(1,-1,1), dstPoint3(1,-2,2);
-
-        //         std::vector<cv::Point3d> src_points{srcPoint1, srcPoint2, srcPoint3}, dst_points{dstPoint1, dstPoint2, dstPoint3};
-
-        //         cv::Mat T = cv::Mat::eye(cv::Size(4,4), CV_64FC1);
-        //         cv::Mat R = cv::Mat::eye(cv::Size(3,3), CV_64FC1);
-        //         cv::Mat t;
-        //         double roll, pitch, yaw;
-        //         ICP(src_points, dst_points, T, R, t);
-        //         fromR2rpy(R, roll, pitch, yaw);
-        //         std::cout<<T<<std::endl;
-        //         std::cout<<"roll: "<<roll/M_PI*180<<"\tpitch:"<<pitch/M_PI*180<<"\tyaw:"<<yaw/M_PI*180<<std::endl;
+        //         if(!depth.empty())
+        //         {
+        //                 for(int i = 0; i < depth.size().width; i++)
+        //                 {
+        //                         for(int j = 0; j < depth.size().height;j++)
+        //                         {
+        //                                 //if(depth.at<uint16_t >(j,i) > 1000) depth.at<uint16_t>(j,i) = 0;
+        //                                 cv::circle(depth, cv::Point2d(640,480), 2, cv::Scalar(255,0,0), 2);
+        //                                 depth.at<uint16_t>(j,i) = (uint16_t)(depth.at<uint16_t>(j,i) *32767./ 1000.);
+        //                         }
+        //                 }
+        //                 std::cout<<depth<<std::endl;
+        //                 cv::circle(depth, cv::Size(640,480),2,cv::Scalar(255,0,0),2);
+        //                 cv::imshow("depth", depth);
+                        
+        //         }
+        //         cv::waitKey(1);
+        //         ros::spinOnce();
         // }
 
         std::vector<cv::Point3d> robot_points_list;
@@ -231,55 +243,92 @@ int main(int argc, char** argv)
         {
                 cv::Point3d robot_point;
                 robot_point.x = (-0.1+0.1*(i/3))*m2mm;
-                robot_point.y = (0.3-0.1*(i%3))*m2mm;
-                robot_point.z = 0.3*m2mm;
+                robot_point.y = (0.1-0.1*(i%3))*m2mm;
+                robot_point.z = 0.35*m2mm;
 
                 robot_points_list.push_back(robot_point);
         }
 
         std::vector<cv::Point3d> camera_points_list;
-        for(int i = 0; i < 9; i++)
-        {
-                while(ros::ok())
-                {
-                        if(start_detect)
-                        {
-                                ROS_INFO("Start Detect Chessboard!");
-                                start_detect = false;
-                                std::vector<cv::Point2f>corners;
 
+        while(ros::ok())
+        {
+                if(start_detect)
+                {
+                        for(int k = 0; k < 100; k ++)
+                        {
+                                rate.sleep();
+                                ros::spinOnce();
+                        }
+                        ROS_INFO("Start Detect Chessboard!");
+                        start_detect = false;
+                        std::vector<cv::Point2f>corners;
+
+                        while(ros::ok())
+                        {                        
                                 if(!rgb.empty())
                                 {
-                                        cv::imshow("chessboard", rgb);
+                                        cv::imshow("rgb", rgb);
                                         cv::waitKey(10);
                                 }
 
-                                while(ros::ok())
-                                {
-                                        bool  getCornerListSuccess = getCornerList(rgb, corners);
-                                        if(getCornerListSuccess)break;
-                                }
-
-                                cv::Point3f center(0.,0.,0.), last_center(0., 0., 0.);
-                                while(ros::ok())
-                                {
-                                        getCenter(corners, cameraMatrix, center);
-
-                                        if(abs(center.z - last_center.z)<10 && center.z > 100 && center.z < 10000 )break;
+                                bool  getCornerListSuccess = false;
+                                getCornerList(rgb, corners, getCornerListSuccess);
                                         
-                                        last_center = center;
-                                }
-                                ROS_INFO("Chessboard Detected! Center Coordinate: [%s, %s, %s]", center.x, center.y, center.z);
-                                camera_points_list.push_back((cv::Point3d)center);
-                                
-                                std_msgs::Bool msg;
-                                msg.data = true;
-                                chessboard_detected_pub.publish(msg);
+                                if(getCornerListSuccess)break;
+                                        
+                                cv::waitKey(10);
+                                ros::spinOnce();
                         }
+                                
+                                
+                        cv::Point3f center(0.,0.,0.), last_center(0., 0., 0.);
+                        int cnt = 0;
+                        while(ros::ok())
+                        {
+                                cnt ++;
+                                if(cnt >= 1000)break;
+                                if(!rgb.empty())
+                                {
+                                        cv::circle(rgb,cv::Point2f(320,240),2,cv::Scalar(0,0,255),2);
+                                        cv::circle(rgb,corners[corners.size()/2],2,cv::Scalar(255,0,0),2);
+                                        cv::imshow("rgb", rgb);
 
-                        ros::spinOnce();
-                        rate.sleep();
+
+                                                for(int i = 0; i < depth.size().width; i++)
+                                                {
+                                                        for(int j = 0; j < depth.size().height;j++)
+                                                        {
+                                                                //if(depth.at<uint16_t >(j,i) > 1000) depth.at<uint16_t>(j,i) = 0;
+                                                                cv::circle(depth,corners[corners.size()/2], 2, cv::Scalar(0,0,255), 10);
+                                                                depth.at<uint16_t>(j,i) = (uint16_t)(depth.at<uint16_t>(j,i) *32767./ 1000.);
+                                                        }
+                                                }
+
+                                        cv::imshow("depth", depth);
+                                        cv::waitKey(10);
+                                }
+
+                                getCenter(corners, cameraMatrix, center);
+                                std::cout<<center.z<<std::endl;
+                                //if(abs(center.z - last_center.z)<10 && center.z > 500 && center.z < 5000 )break;
+                                        
+                                last_center = center;
+                                ros::spinOnce();
+                        }
+                        std::cout<< "Chessboard Detected! Center Coordinate: [ "<< center.x << ", " << center.y << ", " << center.z<<"]"<<std::endl;
+                        camera_points_list.push_back((cv::Point3d)center);
+                                
+                        std_msgs::Bool msg;
+                        msg.data = true;
+                        chessboard_detected_pub.publish(msg);
+
+                        ROS_INFO("Camera Points List Size: [%d]", camera_points_list.size());
+                        if(camera_points_list.size() == _CALIBRATE_POINT_NUM)break;
                 }
+
+                ros::spinOnce();
+                rate.sleep();
         }
 
         cv::Mat T = cv::Mat::eye(cv::Size(4,4), CV_64F);
@@ -290,7 +339,12 @@ int main(int argc, char** argv)
         ICP(camera_points_list, robot_points_list, T, R, t);
         fromR2rpy(R, roll, pitch, yaw);
 
-        std::cout<<"x: " << t.at<double>(0,0)<< "\ty: "<<t.at<double>(1,0)<<"\tz: "<<t.at<double>(2,0)<<"\troll: "<<roll<<"\tpitch:"<<pitch<<"\tyaw:"<<yaw<<std::endl;
+        for(int i = 0 ; i<camera_points_list.size() ; i++)
+        {
+                std::cout<<camera_points_list[i].z<<std::endl;
+        }
+
+        std::cout<<"x: " << t.at<double>(0,0)<< "\ty: "<<t.at<double>(1,0)<<"\tz: "<<t.at<double>(2,0)<<"\troll: "<<roll * rad2ang<<"\tpitch:"<<pitch * rad2ang<<"\tyaw:"<<yaw*rad2ang<<std::endl;
 
 
         // while(ros::ok())

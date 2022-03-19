@@ -15,11 +15,13 @@
 bool move_finished = false;
 bool msg_received = false;
 geometry_msgs::Pose target_pose;
+ int cnt = 0;
 
 void PoseCallBack(const geometry_msgs::Pose::ConstPtr& msg)
 {
         if(move_finished)
         {
+                cnt = 0;
                 target_pose = *msg;
                 msg_received = true;
                 ROS_INFO("Target Pose Received!");
@@ -62,6 +64,9 @@ int main(int argc, char** argv)
 
         const moveit::core::JointModelGroup* joint_model_group =move_group.getCurrentState()->getJointModelGroup(PLANNING_GROUP);
 
+        const std::string end_effector_name = move_group.getEndEffectorLink();
+        std::cout<<"current pose: "<<move_group.getCurrentPose().pose<<std::endl;
+
         namespace rvt = rviz_visual_tools;
         moveit_visual_tools::MoveItVisualTools visual_tools("dummy");
         visual_tools.deleteAllMarkers();
@@ -100,9 +105,15 @@ int main(int argc, char** argv)
 
                         move_finished = true;
 
-                        std_msgs::Bool msg;
-                        msg.data = true;
-                        target_achieved_pub.publish(msg);
+                        geometry_msgs::Pose curr_pose = move_group.getCurrentPose().pose;
+
+                        if(abs(curr_pose.position.x - target_pose.position.x) + abs(curr_pose.position.y - target_pose.position.y) + abs(curr_pose.position.z - target_pose.position.z) < 0.1&&cnt == 0)
+                        {
+                                cnt++; 
+                                std_msgs::Bool msg;
+                                msg.data = 1;
+                                target_achieved_pub.publish(msg);
+                        }
                 }
                 ros::spinOnce();
         }
