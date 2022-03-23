@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(main)
 
+set(OpenCV_DIR /usr/local/lib/cmake/opencv4/)
+
 find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
   roscpp
   rospy
   std_msgs
   geometry_msgs
+  OpenCV
 )
 
 catkin_package(INCLUDE_DIRS include CATKIN_DEPENDS roscpp rospy std_msgs geometry_msgs)
