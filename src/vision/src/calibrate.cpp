@@ -9,7 +9,6 @@
 
 #define m2mm (1000)
 #define rad2ang (180./M_PI)
-#define _CALIBRATE_POINT_NUM  (27)
 
 cv::Mat rgb;
 cv::Mat depth;
@@ -48,8 +47,6 @@ void getCornerList(const cv::Mat& rgb, std::vector<cv::Point2f>& corners, bool& 
                 chessboard_detected = false;
                 return;
         }
-
-        //cv::imshow("chessboard", rgb);
 
         cv::Mat gray;
         cv::cvtColor(rgb, gray, cv::COLOR_BGR2GRAY);
@@ -128,14 +125,14 @@ void getCameraInfo(cv::Mat& cameraMatrix, cv::Mat& distCoeffs)
         distCoeffs = cv::Mat(distCoeffs_vec, true);
 }
 
-void fromR2rpy(const cv::Mat& R, double& roll, double& pitch, double& yaw)
+void fromR2RPY(const cv::Mat& R, double& roll, double& pitch, double& yaw)
 {
         roll = atan2(R.at<double>(2,1), R.at<double>(2,2));
         pitch = atan2(-R.at<double>(2,0), sqrt(pow(R.at<double>(2,1),2)+pow(R.at<double>(2,2),2)));
         yaw = atan2(R.at<double>(1,0),R.at<double>(0,0));
 }
 
-void fromrpy2Quaternion(const double& roll, const double& pitch, const double&yaw, geometry_msgs::Pose& pose)
+void fromRPY2Quaternion(const double& roll, const double& pitch, const double&yaw, geometry_msgs::Pose& pose)
 {
         cv::Mat mat1(4, 1, CV_64FC1);
         cv::Mat mat2(4, 1, CV_64FC1);
@@ -246,8 +243,12 @@ int main(int argc, char** argv)
 
         ros::Rate rate(50);
 
+        int calibrate_points_num;
+        ros::param::get("/vision/calibrate/calibrate_points_num", calibrate_points_num);
+
+        //把机械臂系下的3D点加入列表
         std::vector<cv::Point3d> robot_points_list;
-        for(int i = 0; i < _CALIBRATE_POINT_NUM; i ++)
+        for(int i = 0; i < calibrate_points_num; i ++)
         {
                 cv::Point3d robot_point;
                 robot_point.x = (-0.1+0.1*((i%9)/3))*m2mm;
@@ -272,6 +273,7 @@ int main(int argc, char** argv)
                         start_detect = false;
                         std::vector<cv::Point2f>corners;
 
+                        //寻找棋盘格
                         while(ros::ok())
                         {                        
                                 if(!rgb.empty())
@@ -289,6 +291,7 @@ int main(int argc, char** argv)
                                 ros::spinOnce();
                         }
                                 
+                        //得到棋盘格中心点深度        
                         cv::Point3f  real_center(0.,0.,0.), temp_center(0.,0.,0.);
                         int cnt = 0;
                         while(ros::ok())
@@ -325,24 +328,26 @@ int main(int argc, char** argv)
                         chessboard_detected_pub.publish(msg);
 
                         ROS_INFO("Camera Points List Size: [%d]", camera_points_list.size());
-                        if(camera_points_list.size() == _CALIBRATE_POINT_NUM)break;
+                        if(camera_points_list.size() == calibrate_points_num)break;
                 }
 
                 ros::spinOnce();
                 rate.sleep();
         }
 
+        //计算机械臂系相对于相机系的齐次变换矩阵
         cv::Mat T = cv::Mat::eye(cv::Size(4,4), CV_64F);
         cv::Mat R = cv::Mat::eye(cv::Size(3,3), CV_64F);
         cv::Mat t;
         double roll, pitch, yaw;
 
         ICP(camera_points_list, robot_points_list, T, R, t);
-        fromR2rpy(R, roll, pitch, yaw);
+        fromR2RPY(R, roll, pitch, yaw);
 
         ROS_INFO("x: [%lf], y: [%lf], z: [%lf], roll: [%lf], pitch: [%lf], yaw: [%lf]", t.at<double>(0,0), t.at<double>(1,0), t.at<double>(2,0), roll*rad2ang, pitch*rad2ang, yaw*rad2ang);
         std::cout<<"Calculated T:"<<std::endl<<T<<std::endl;
 
+        //测试齐次变换矩阵的准确度
         // for(int i = 0; i <_CALIBRATE_POINT_NUM; i ++)
         // {
         //         cv::Mat homo(4,1,CV_64F);
@@ -356,11 +361,12 @@ int main(int argc, char** argv)
         //         std::cout<<robot_points_list[i]<<std::endl;
         // }
 
+        //发送齐次变换矩阵
         geometry_msgs::Pose cam2robot;
         cam2robot.position.x = t.at<double>(0,0);
         cam2robot.position.y = t.at<double>(1,0);
         cam2robot.position.z = t.at<double>(2,0);
-        fromrpy2Quaternion(roll, pitch, yaw, cam2robot);
+        fromRPY2Quaternion(roll, pitch, yaw, cam2robot);
         robot_pose_pub.publish(cam2robot);
 
         ros::spin();

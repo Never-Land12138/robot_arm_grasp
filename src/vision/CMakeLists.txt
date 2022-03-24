@@ -21,10 +21,6 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_executable(vision src/vision.cpp)
+add_executable(calibrate src/calibrate.cpp)
 
-target_link_libraries(${PROJECT_NAME}
-   ${catkin_LIBRARIES}
-)
-
-
+target_link_libraries(calibrate ${catkin_LIBRARIES})

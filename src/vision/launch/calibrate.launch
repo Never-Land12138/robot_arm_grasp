@@ -1,4 +1,9 @@
 <launch>
-        <include file="$(find realsense-ros)/realsense2_camera/launch/rs_camera.launch)"/>
-        <node pkg="vision" type="vision.py" name = "vision" ns="vision", output="screen"/>
+        <arg name = "calibrate_points_num" default = "27"/>
+
+        <include file="$(find realsense2_camera)/launch/rs_camera.launch" ns="vision"/>
+
+        <node pkg="vision" type="calibrate" name = "calibrate" ns="vision" output = "screen">
+                <param name = "calibrate_points_num" value = "$(arg calibrate_points_num)"/>
+        </node>
 </launch>

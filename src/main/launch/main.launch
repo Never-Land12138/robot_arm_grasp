@@ -1,0 +1,13 @@
+<launch>
+        <arg name = "calibrate_points_num" default = "27"/>
+
+        <include file = "$(find vision)/launch/calibrate.launch">
+                <arg name="calibrate_points_num" value = "$(arg calibrate_points_num)"/>
+        </include>
+
+        <!-- <include file = "$(find moveit_tutorials)/move_group_interfaces/launch/robot_arm_server.launch"/> -->
+
+        <node pkg="main" type="main" name="main" output="screen">
+                <param name="calibrate_points_num" value="$(arg calibrate_points_num)"/>
+        </node>
+</launch>

@@ -7,6 +7,7 @@
 
 bool target_achieved = false;
 bool chessboard_detected = false;
+bool homogeneous_transform_matrix_rcvd = false;
 
 geometry_msgs::Pose cam2robot;
 cv::Mat T = cv::Mat::eye(cv::Size(4,4), CV_64F);
@@ -45,6 +46,55 @@ void fromRPY2R(const double& roll, const double& pitch, const double& yaw, cv::M
         Rz.at<double>(1,1) = std::cos(yaw);
 
         R = Rz*Ry*Rx; 
+}
+
+void fromR2RPY(const cv::Mat& R, double& roll, double& pitch, double& yaw)
+{
+        roll = atan2(R.at<double>(2,1), R.at<double>(2,2));
+        pitch = atan2(-R.at<double>(2,0), sqrt(pow(R.at<double>(2,1),2)+pow(R.at<double>(2,2),2)));
+        yaw = atan2(R.at<double>(1,0),R.at<double>(0,0));
+}
+
+void fromRPY2Quaternion(const double& roll, const double& pitch, const double&yaw, geometry_msgs::Pose& pose)
+{
+        cv::Mat mat1(4, 1, CV_64FC1);
+        cv::Mat mat2(4, 1, CV_64FC1);
+        cv::Mat mat3(4, 1, CV_64FC1);
+
+        mat1.at<double>(0,0)=std::cos(yaw/2);
+        mat1.at<double>(3,0)=std::sin(yaw/2);
+
+        mat2.at<double>(0,0)=std::cos(pitch/2);
+        mat2.at<double>(2,0)=std::sin(pitch/2);
+
+        mat3.at<double>(0,0)=std::cos(roll/2);
+        mat3.at<double>(1,0)=std::sin(roll/2);
+
+        cv::Mat q = mat1*mat2*mat3;
+
+        pose.orientation.w=q.at<double>(0,0);
+        pose.orientation.x=q.at<double>(1,0);
+        pose.orientation.y=q.at<double>(2,0);
+        pose.orientation.z=q.at<double>(3,0);
+}
+
+void fromT2Pose(const cv::Mat& T, geometry_msgs::Pose& pose)
+{
+        cv::Mat R = cv::Mat::eye(cv::Size(3,3), CV_64FC1);
+
+        for(int i = 0; i < 9; i ++)
+        {
+                R.at<double>(i/3,i%3) =T.at<double>(i/3,i%3); 
+        }
+
+        double roll, pitch, yaw;
+
+        fromR2RPY(R, roll, pitch, yaw);
+        fromRPY2Quaternion(roll, pitch, yaw, pose);
+
+        pose.position.x = T.at<double>(0,3);
+        pose.position.y = T.at<double>(1,3);
+        pose.position.z = T.at<double>(2,3);
 }
 
 void targetAchieveCallBack(const std_msgs::Bool::ConstPtr& msg)
@@ -88,6 +138,8 @@ void robotPoseCallBack(const geometry_msgs::Pose::ConstPtr& msg)
         T.at<double>(0,3) = cam2robot.position.x;
         T.at<double>(1,3) = cam2robot.position.y;
         T.at<double>(2,3) = cam2robot.position.z;
+
+        homogeneous_transform_matrix_rcvd = true;
 }
 
 int main(int argc, char** argv)
@@ -104,8 +156,12 @@ int main(int argc, char** argv)
 
         ros::Rate rate(20);
 
+        int calibrate_points_num;
+        ros::param::get("/main/calibrate_points_num", calibrate_points_num);
+
+        //校准
         std::vector<geometry_msgs::Pose> target_pose_list;
-        for(int i = 0; i<27; i ++)
+        for(int i = 0; i<calibrate_points_num; i ++)
         {
                 geometry_msgs::Pose target_pose;
 
@@ -147,6 +203,34 @@ int main(int argc, char** argv)
                 }
                 chessboard_detected = false;
         }
+
+        //等待齐次变换矩阵接收
+        while(ros::ok() && (!homogeneous_transform_matrix_rcvd))
+        {
+                rate.sleep();
+        }
+
+        cv::Mat p1 = cv::Mat::eye(cv::Size(4,4),CV_64FC1);
+        cv::Mat p1_R = cv::Mat::eye(cv::Size(3,3),CV_64FC1);
+        fromRPY2R(0, 0, -M_PI, p1_R);
+        for(int i = 0; i < 3; i ++)
+        {
+                for(int j = 0; j < 3; j ++)
+                {
+                        p1.at<double>(i,j) = p1_R.at<double>(i,j);
+                }
+        }
+        p1.at<double>(0,3) = 0.;
+        p1.at<double>(1,3) = 0.;
+        p1.at<double>(2,3) = 0.5;
+
+        cv::Mat p1_transformed = T * p1;
+
+        geometry_msgs::Pose msg;
+        fromT2Pose(p1_transformed, msg);
+        target_pose_pub.publish(msg);
+
+        while(ros::ok());
 
         ros::spin();
         return 0;
